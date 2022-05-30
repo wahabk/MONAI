@@ -29,6 +29,7 @@ class ConvBlock(nn.Module):
         kernel_size: int = 3,
         strides: int = 1,
         dropout=0.0,
+        pad=0,
     ):
         super().__init__()
         layers = [
@@ -38,7 +39,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=strides,
-                padding=None,
+                padding=pad,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
@@ -50,7 +51,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=1,
-                padding=None,
+                padding=pad,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
@@ -65,7 +66,15 @@ class ConvBlock(nn.Module):
 
 
 class UpConv(nn.Module):
-    def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, kernel_size=3, strides=2, dropout=0.0):
+    def __init__(
+        self, 
+        spatial_dims: int, 
+        in_channels: int, 
+        out_channels: int, 
+        kernel_size=3, 
+        strides=2, 
+        dropout=0.0,
+        pad=0):
         super().__init__()
         self.up = Convolution(
             spatial_dims,
@@ -78,6 +87,7 @@ class UpConv(nn.Module):
             norm=Norm.BATCH,
             dropout=dropout,
             is_transposed=True,
+            padding=pad,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -143,14 +153,14 @@ class AttentionBlock(nn.Module):
 
 
 class AttentionLayer(nn.Module):
-    def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, submodule: nn.Module, dropout=0.0):
+    def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, submodule: nn.Module, dropout=0.0, pad=0):
         super().__init__()
         self.attention = AttentionBlock(
             spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2
         )
-        self.upconv = UpConv(spatial_dims=spatial_dims, in_channels=out_channels, out_channels=in_channels, strides=2)
+        self.upconv = UpConv(spatial_dims=spatial_dims, in_channels=out_channels, out_channels=in_channels, strides=2, pad=pad)
         self.merge = Convolution(
-            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout
+            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout, padding=0,
         )
         self.submodule = submodule
 
@@ -176,6 +186,7 @@ class AttentionUnet(nn.Module):
         kernel_size: convolution kernel size.
         upsample_kernel_size: convolution kernel size for transposed convolution layers.
         dropout: dropout ratio. Defaults to no dropout.
+        padding: 'same', or 'valid'. whether to pad encoding layers for making the output same size or smaller than input.
     """
 
     def __init__(
@@ -188,6 +199,7 @@ class AttentionUnet(nn.Module):
         kernel_size: Union[Sequence[int], int] = 3,
         up_kernel_size: Union[Sequence[int], int] = 3,
         dropout: float = 0.0,
+        padding: str = 'same'
     ):
         super().__init__()
         self.dimensions = spatial_dims
@@ -197,6 +209,13 @@ class AttentionUnet(nn.Module):
         self.strides = strides
         self.kernel_size = kernel_size
         self.dropout = dropout
+        if padding == 'same':
+            self.pad = 1
+        elif padding == 'valid':
+            self.pad = 0
+        else:
+            raise Exception("Only options available for padding is 'same' or 'valid'")
+        self.up_kernel_size = up_kernel_size
 
         head = ConvBlock(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=channels[0], dropout=dropout)
         reduce_channels = Convolution(
@@ -208,11 +227,11 @@ class AttentionUnet(nn.Module):
             padding=0,
             conv_only=True,
         )
-        self.up_kernel_size = up_kernel_size
 
         def _create_block(channels: Sequence[int], strides: Sequence[int], level: int = 0) -> nn.Module:
             if len(channels) > 2:
                 subblock = _create_block(channels[1:], strides[1:], level=level + 1)
+                
                 return AttentionLayer(
                     spatial_dims=spatial_dims,
                     in_channels=channels[0],
@@ -224,6 +243,7 @@ class AttentionUnet(nn.Module):
                             out_channels=channels[1],
                             strides=strides[0],
                             dropout=self.dropout,
+                            pad=self.pad,
                         ),
                         subblock,
                     ),
