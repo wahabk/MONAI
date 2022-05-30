@@ -87,7 +87,7 @@ class UpConv(nn.Module):
             norm=Norm.BATCH,
             dropout=dropout,
             is_transposed=True,
-            padding=pad,
+            # padding=None,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -96,7 +96,7 @@ class UpConv(nn.Module):
 
 
 class AttentionBlock(nn.Module):
-    def __init__(self, spatial_dims: int, f_int: int, f_g: int, f_l: int, dropout=0.0):
+    def __init__(self, spatial_dims: int, f_int: int, f_g: int, f_l: int, dropout=0.0, pad=0):
         super().__init__()
         self.W_g = nn.Sequential(
             Convolution(
@@ -119,7 +119,7 @@ class AttentionBlock(nn.Module):
                 out_channels=f_int,
                 kernel_size=1,
                 strides=1,
-                padding=0,
+                padding=1,
                 dropout=dropout,
                 conv_only=True,
             ),
@@ -156,11 +156,11 @@ class AttentionLayer(nn.Module):
     def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, submodule: nn.Module, dropout=0.0, pad=0):
         super().__init__()
         self.attention = AttentionBlock(
-            spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2
+            spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2, pad=pad,
         )
         self.upconv = UpConv(spatial_dims=spatial_dims, in_channels=out_channels, out_channels=in_channels, strides=2, pad=pad)
         self.merge = Convolution(
-            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout, padding=0,
+            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout, padding=None,
         )
         self.submodule = submodule
 
@@ -217,7 +217,7 @@ class AttentionUnet(nn.Module):
             raise Exception("Only options available for padding is 'same' or 'valid'")
         self.up_kernel_size = up_kernel_size
 
-        head = ConvBlock(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=channels[0], dropout=dropout)
+        head = ConvBlock(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=channels[0], dropout=dropout, pad=self.pad)
         reduce_channels = Convolution(
             spatial_dims=spatial_dims,
             in_channels=channels[0],
@@ -248,6 +248,7 @@ class AttentionUnet(nn.Module):
                         subblock,
                     ),
                     dropout=dropout,
+                    pad=self.pad,
                 )
             else:
                 # the next layer is the bottom so stop recursion,
@@ -268,6 +269,7 @@ class AttentionUnet(nn.Module):
                 out_channels=out_channels,
                 strides=strides,
                 dropout=self.dropout,
+                pad=None,
             ),
             dropout=self.dropout,
         )
