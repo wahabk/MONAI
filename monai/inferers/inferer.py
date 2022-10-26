@@ -11,7 +11,7 @@
 
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -122,6 +122,9 @@ class SlidingWindowInferer(Inferer):
             `inputs` and `roi_size`. Output is on the `device`.
         progress: whether to print a tqdm progress bar.
         cache_roi_weight_map: whether to precompute the ROI weight map.
+        cpu_thresh: when provided, dynamically switch to stitching on cpu (to save gpu memory)
+            when input image volume is larger than this threshold (in pixels/volxels).
+            Otherwise use ``"device"``. Thus, the output may end-up on either cpu or gpu.
 
     Note:
         ``sw_batch_size`` denotes the max number of windows per network inference iteration,
@@ -142,8 +145,9 @@ class SlidingWindowInferer(Inferer):
         device: Union[torch.device, str, None] = None,
         progress: bool = False,
         cache_roi_weight_map: bool = False,
+        cpu_thresh: Optional[int] = None,
     ) -> None:
-        Inferer.__init__(self)
+        super().__init__()
         self.roi_size = roi_size
         self.sw_batch_size = sw_batch_size
         self.overlap = overlap
@@ -154,6 +158,7 @@ class SlidingWindowInferer(Inferer):
         self.sw_device = sw_device
         self.device = device
         self.progress = progress
+        self.cpu_thresh = cpu_thresh
 
         # compute_importance_map takes long time when computing on cpu. We thus
         # compute it once if it's static and then save it for future usage
@@ -173,8 +178,12 @@ class SlidingWindowInferer(Inferer):
             ) from e
 
     def __call__(
-        self, inputs: torch.Tensor, network: Callable[..., torch.Tensor], *args: Any, **kwargs: Any
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor], Dict[Any, torch.Tensor]]:
+        self,
+        inputs: torch.Tensor,
+        network: Callable[..., Union[torch.Tensor, Sequence[torch.Tensor], Dict[Any, torch.Tensor]]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], Dict[Any, torch.Tensor]]:
         """
 
         Args:
@@ -185,7 +194,12 @@ class SlidingWindowInferer(Inferer):
             kwargs: optional keyword args to be passed to ``network``.
 
         """
-        return sliding_window_inference(  # type: ignore
+
+        device = self.device
+        if device is None and self.cpu_thresh is not None and inputs.shape[2:].numel() > self.cpu_thresh:
+            device = "cpu"  # stitch in cpu memory if image is too large
+
+        return sliding_window_inference(
             inputs,
             self.roi_size,
             self.sw_batch_size,
@@ -196,7 +210,7 @@ class SlidingWindowInferer(Inferer):
             self.padding_mode,
             self.cval,
             self.sw_device,
-            self.device,
+            device,
             self.progress,
             self.roi_weight_map,
             *args,
@@ -251,8 +265,13 @@ class SaliencyInferer(Inferer):
 
 class SliceInferer(SlidingWindowInferer):
     """
-    SliceInferer extends SlidingWindowInferer to provide slice-by-slice (2D) inference
-    when provided a 3D volume.
+    SliceInferer extends SlidingWindowInferer to provide slice-by-slice (2D) inference when provided a 3D volume.
+    A typical use case could be a 2D model (like 2D segmentation UNet) operates on the slices from a 3D volume,
+    and the output is a 3D volume with 2D slices aggregated. Example::
+
+        # sliding over the `spatial_dim`
+        inferer = SliceInferer(roi_size=(64, 256), sw_batch_size=1, spatial_dim=1)
+        output = inferer(input_volume, net)
 
     Args:
         spatial_dim: Spatial dimension over which the slice-by-slice inference runs on the 3D volume.
@@ -269,10 +288,15 @@ class SliceInferer(SlidingWindowInferer):
     def __init__(self, spatial_dim: int = 0, *args, **kwargs) -> None:
         self.spatial_dim = spatial_dim
         super().__init__(*args, **kwargs)
+        self.orig_roi_size = ensure_tuple(self.roi_size)
 
     def __call__(
-        self, inputs: torch.Tensor, network: Callable[..., torch.Tensor], *args: Any, **kwargs: Any
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor], Dict[Any, torch.Tensor]]:
+        self,
+        inputs: torch.Tensor,
+        network: Callable[..., Union[torch.Tensor, Sequence[torch.Tensor], Dict[Any, torch.Tensor]]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], Dict[Any, torch.Tensor]]:
         """
         Args:
             inputs: 3D input for inference
@@ -285,21 +309,38 @@ class SliceInferer(SlidingWindowInferer):
 
         # Check if ``roi_size`` tuple is 2D and ``inputs`` tensor is 3D
         self.roi_size = ensure_tuple(self.roi_size)
-        if len(self.roi_size) == 2 and len(inputs.shape[2:]) == 3:
-            self.roi_size = list(self.roi_size)
+        if len(self.orig_roi_size) == 2 and len(inputs.shape[2:]) == 3:
+            self.roi_size = list(self.orig_roi_size)
             self.roi_size.insert(self.spatial_dim, 1)
         else:
-            raise RuntimeError("Currently, only 2D `roi_size` with 3D `inputs` tensor is supported.")
+            raise RuntimeError(
+                f"Currently, only 2D `roi_size` ({self.orig_roi_size}) with 3D `inputs` tensor (shape={inputs.shape}) is supported."
+            )
 
         return super().__call__(inputs=inputs, network=lambda x: self.network_wrapper(network, x, *args, **kwargs))
 
-    def network_wrapper(self, network: Callable[..., torch.Tensor], x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+    def network_wrapper(
+        self,
+        network: Callable[..., Union[torch.Tensor, Sequence[torch.Tensor], Dict[Any, torch.Tensor]]],
+        x: torch.Tensor,
+        *args,
+        **kwargs,
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], Dict[Any, torch.Tensor]]:
         """
         Wrapper handles inference for 2D models over 3D volume inputs.
         """
         #  Pass 4D input [N, C, H, W]/[N, C, D, W]/[N, C, D, H] to the model as it is 2D.
         x = x.squeeze(dim=self.spatial_dim + 2)
         out = network(x, *args, **kwargs)
+
         #  Unsqueeze the network output so it is [N, C, D, H, W] as expected by
         # the default SlidingWindowInferer class
-        return out.unsqueeze(dim=self.spatial_dim + 2)
+        if isinstance(out, torch.Tensor):
+            return out.unsqueeze(dim=self.spatial_dim + 2)
+
+        if isinstance(out, Mapping):
+            for k in out.keys():
+                out[k] = out[k].unsqueeze(dim=self.spatial_dim + 2)
+            return out
+
+        return tuple(out_i.unsqueeze(dim=self.spatial_dim + 2) for out_i in out)

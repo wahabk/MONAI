@@ -60,7 +60,7 @@ class TestGridPatchDataset(unittest.TestCase):
             np.testing.assert_equal(tuple(item[0].shape), (2, 1, 2, 2))
         np.testing.assert_allclose(
             item[0],
-            np.array([[[[7.4965, 8.4965], [11.4965, 12.4965]]], [[[11.3584, 12.3584], [15.3584, 16.3584]]]]),
+            np.array([[[[8.240326, 9.240326], [12.240326, 13.240326]]], [[[10.1624, 11.1624], [14.1624, 15.1624]]]]),
             rtol=1e-4,
         )
         np.testing.assert_allclose(item[1], np.array([[[0, 1], [2, 4], [0, 2]], [[0, 1], [2, 4], [2, 4]]]), rtol=1e-5)
@@ -69,7 +69,9 @@ class TestGridPatchDataset(unittest.TestCase):
                 np.testing.assert_equal(tuple(item[0].shape), (2, 1, 2, 2))
             np.testing.assert_allclose(
                 item[0],
-                np.array([[[[7.2548, 8.2548], [11.2548, 12.2548]]], [[[9.1106, 10.1106], [13.1106, 14.1106]]]]),
+                np.array(
+                    [[[[7.723618, 8.723618], [11.723618, 12.723618]]], [[[10.7175, 11.7175], [14.7175, 15.7175]]]]
+                ),
                 rtol=1e-3,
             )
             np.testing.assert_allclose(
@@ -102,7 +104,7 @@ class TestGridPatchDataset(unittest.TestCase):
             self.assertListEqual(item[0]["metadata"], ["test string", "test string"])
         np.testing.assert_allclose(
             item[0]["image"],
-            np.array([[[[7.4965, 8.4965], [11.4965, 12.4965]]], [[[11.3584, 12.3584], [15.3584, 16.3584]]]]),
+            np.array([[[[8.240326, 9.240326], [12.240326, 13.240326]]], [[[10.1624, 11.1624], [14.1624, 15.1624]]]]),
             rtol=1e-4,
         )
         np.testing.assert_allclose(item[1], np.array([[[0, 1], [2, 4], [0, 2]], [[0, 1], [2, 4], [2, 4]]]), rtol=1e-5)
@@ -111,7 +113,9 @@ class TestGridPatchDataset(unittest.TestCase):
                 np.testing.assert_equal(item[0]["image"].shape, (2, 1, 2, 2))
             np.testing.assert_allclose(
                 item[0]["image"],
-                np.array([[[[7.2548, 8.2548], [11.2548, 12.2548]]], [[[9.1106, 10.1106], [13.1106, 14.1106]]]]),
+                np.array(
+                    [[[[7.723618, 8.723618], [11.723618, 12.723618]]], [[[10.7175, 11.7175], [14.7175, 15.7175]]]]
+                ),
                 rtol=1e-3,
             )
             np.testing.assert_allclose(

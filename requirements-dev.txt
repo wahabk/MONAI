@@ -1,20 +1,19 @@
 # Full requirements for developments
 -r requirements-min.txt
-pytorch-ignite==0.4.8
-gdown>=3.6.4
+pytorch-ignite==0.4.10
+gdown>=4.4.0
 scipy
-itk>=5.2
+itk>=5.2; python_version < "3.10"
 nibabel
 pillow!=8.3.0  # https://github.com/python-pillow/Pillow/issues/5571
 tensorboard
-scikit-image>=0.14.2
+scikit-image>=0.19.0
 tqdm>=4.47.0
 lmdb
 flake8>=3.8.1
 flake8-bugbear
 flake8-comprehensions
 flake8-executable
-flake8-pyi
 pylint!=2.13  # https://github.com/PyCQA/pylint/issues/5969
 mccabe
 pep8-naming
@@ -32,15 +31,15 @@ Sphinx==3.5.3
 recommonmark==0.6.0
 sphinx-autodoc-typehints==1.11.1
 sphinx-rtd-theme==0.5.2
-cucim==22.2.1; platform_system == "Linux"
+cucim==22.8.1; platform_system == "Linux"
 openslide-python==1.1.2
 imagecodecs; platform_system == "Linux"
 tifffile; platform_system == "Linux"
 pandas
 requests
 einops
-transformers
-mlflow!=1.26.1  # https://github.com/Project-MONAI/MONAI/issues/4375
+transformers<4.22  # https://github.com/Project-MONAI/MONAI/issues/5157
+mlflow
 matplotlib!=3.5.0
 tensorboardX
 types-PyYAML
@@ -49,3 +48,7 @@ fire
 jsonschema
 pynrrd
 pre-commit
+pydicom
+h5py
+nni
+optuna

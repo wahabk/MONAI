@@ -268,16 +268,24 @@ TestTimeAugmentation
 ~~~~~~~~~~~~~~~~~~~~
 .. autoclass:: monai.data.TestTimeAugmentation
 
+N-Dim Fourier Transform
+~~~~~~~~~~~~~~~~~~~~~~~~~
+.. automodule:: monai.data.fft_utils
+.. autofunction:: monai.data.fft_utils.fftn_centered
+.. autofunction:: monai.data.fft_utils.ifftn_centered
+
 
 Meta Object
 -----------
 .. automodule:: monai.data.meta_obj
-    :members:
+  :members:
 
 MetaTensor
 ----------
 .. autoclass:: monai.data.MetaTensor
-   :members:
+  :members:
+  :show-inheritance:
+  :inherited-members: MetaObj
 
 
 
@@ -304,12 +312,23 @@ OpenSlideWSIReader
 .. autoclass:: monai.data.OpenSlideWSIReader
   :members:
 
+TiffFileWSIReader
+~~~~~~~~~~~~~~~~~
+.. autoclass:: monai.data.TiffFileWSIReader
+  :members:
+
+
 Whole slide image datasets
 --------------------------
 
 PatchWSIDataset
 ~~~~~~~~~~~~~~~
 .. autoclass:: monai.data.PatchWSIDataset
+    :members:
+
+MaskedPatchWSIDataset
+~~~~~~~~~~~~~~~~~~~~~~
+.. autoclass:: monai.data.MaskedPatchWSIDataset
     :members:
 
 SlidingPatchWSIDataset
@@ -321,3 +340,18 @@ Bounding box
 ------------
 .. automodule:: monai.data.box_utils
     :members:
+
+Video datasets
+--------------
+
+VideoDataset
+~~~~~~~~~~~~
+.. autoclass:: monai.data.video_dataset.VideoDataset
+
+VideoFileDataset
+~~~~~~~~~~~~~~~~
+.. autoclass:: monai.data.video_dataset.VideoFileDataset
+
+CameraDataset
+~~~~~~~~~~~~~
+.. autoclass:: monai.data.video_dataset.CameraDataset

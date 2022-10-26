@@ -15,12 +15,14 @@ from typing import Any, Callable, Dict, List, Mapping, Sequence, Tuple, Union
 import torch
 import torch.nn.functional as F
 
+from monai.data.meta_tensor import MetaTensor
 from monai.data.utils import compute_importance_map, dense_patch_slices, get_valid_patch_size
 from monai.transforms import Resize
 from monai.utils import (
     BlendMode,
     PytorchPadMode,
     convert_data_type,
+    convert_to_dst_type,
     ensure_tuple,
     fall_back_tuple,
     look_up_option,
@@ -36,7 +38,7 @@ def sliding_window_inference(
     inputs: torch.Tensor,
     roi_size: Union[Sequence[int], int],
     sw_batch_size: int,
-    predictor: Callable[..., torch.Tensor],
+    predictor: Callable[..., Union[torch.Tensor, Sequence[torch.Tensor], Dict[Any, torch.Tensor]]],
     overlap: float = 0.25,
     mode: Union[BlendMode, str] = BlendMode.CONSTANT,
     sigma_scale: Union[Sequence[float], float] = 0.125,
@@ -48,7 +50,7 @@ def sliding_window_inference(
     roi_weight_map: Union[torch.Tensor, None] = None,
     *args: Any,
     **kwargs: Any,
-) -> Union[torch.Tensor, Tuple[torch.Tensor], Dict[Any, torch.Tensor]]:
+) -> Union[torch.Tensor, Tuple[torch.Tensor, ...], Dict[Any, torch.Tensor]]:
     """
     Sliding window inference on `inputs` with `predictor`.
 
@@ -135,7 +137,7 @@ def sliding_window_inference(
         diff = max(roi_size[k - 2] - inputs.shape[k], 0)
         half = diff // 2
         pad_size.extend([half, diff - half])
-    inputs = F.pad(inputs, pad=pad_size, mode=look_up_option(padding_mode, PytorchPadMode).value, value=cval)
+    inputs = F.pad(inputs, pad=pad_size, mode=look_up_option(padding_mode, PytorchPadMode), value=cval)
 
     scan_interval = _get_scan_interval(image_size, roi_size, num_spatial_dims, overlap)
 
@@ -155,7 +157,8 @@ def sliding_window_inference(
             raise RuntimeError(
                 "Seems to be OOM. Please try smaller patch size or mode='constant' instead of mode='gaussian'."
             ) from e
-    importance_map = convert_data_type(importance_map, torch.Tensor, device, compute_dtype)[0]  # type: ignore
+    importance_map = convert_data_type(importance_map, torch.Tensor, device, compute_dtype)[0]
+
     # handle non-positive weights
     min_non_zero = max(importance_map[importance_map != 0].min().item(), 1e-3)
     importance_map = torch.clamp(importance_map.to(torch.float32), min=min_non_zero).to(compute_dtype)
@@ -172,10 +175,13 @@ def sliding_window_inference(
             [slice(int(idx / num_win), int(idx / num_win) + 1), slice(None)] + list(slices[idx % num_win])
             for idx in slice_range
         ]
-        window_data = torch.cat([inputs[win_slice] for win_slice in unravel_slice]).to(sw_device)
+        window_data = torch.cat(
+            [convert_data_type(inputs[win_slice], torch.Tensor)[0] for win_slice in unravel_slice]
+        ).to(sw_device)
         seg_prob_out = predictor(window_data, *args, **kwargs)  # batched patch segmentation
 
         # convert seg_prob_out to tuple seg_prob_tuple, this does not allocate new memory.
+        seg_prob_tuple: Tuple[torch.Tensor, ...]
         if isinstance(seg_prob_out, torch.Tensor):
             seg_prob_tuple = (seg_prob_out,)
         elif isinstance(seg_prob_out, Mapping):
@@ -270,8 +276,12 @@ def sliding_window_inference(
     if dict_key is not None:  # if output of predictor is a dict
         final_output = dict(zip(dict_key, output_image_list))
     else:
-        final_output = tuple(output_image_list)
-    return final_output[0] if is_tensor_output else final_output  # type: ignore
+        final_output = tuple(output_image_list)  # type: ignore
+    final_output = final_output[0] if is_tensor_output else final_output
+
+    if isinstance(inputs, MetaTensor):
+        final_output = convert_to_dst_type(final_output, inputs, device=device)[0]  # type: ignore
+    return final_output
 
 
 def _get_scan_interval(

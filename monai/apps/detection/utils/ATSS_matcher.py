@@ -59,7 +59,6 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 """
 The functions in this script are adapted from nnDetection,
 https://github.com/MIC-DKFZ/nnDetection/blob/main/nndet/core/boxes/matcher.py
@@ -74,7 +73,7 @@ These are the changes compared with nndetection:
 """
 
 import logging
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Callable, Sequence, Tuple, TypeVar
 
 import torch
@@ -139,6 +138,7 @@ class Matcher(ABC):
             num_anchors_per_loc=num_anchors_per_loc,
         )
 
+    @abstractmethod
     def compute_matches(
         self, boxes: torch.Tensor, anchors: torch.Tensor, num_anchors_per_level: Sequence[int], num_anchors_per_loc: int
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -154,8 +154,8 @@ class Matcher(ABC):
         Returns:
             - matrix which contains the similarity from each boxes to each anchor [N, M]
             - vector which contains the matched box index for all
-                anchors (if background `BELOW_LOW_THRESHOLD` is used
-                and if it should be ignored `BETWEEN_THRESHOLDS` is used) [M]
+              anchors (if background `BELOW_LOW_THRESHOLD` is used
+              and if it should be ignored `BETWEEN_THRESHOLDS` is used) [M]
         """
         raise NotImplementedError
 
@@ -189,7 +189,7 @@ class ATSSMatcher(Matcher):
         self.center_in_gt = center_in_gt
         self.debug = debug
         logging.info(
-            f"Running ATSS Matching with num_candidates={self.num_candidates} " f"and center_in_gt {self.center_in_gt}."
+            f"Running ATSS Matching with num_candidates={self.num_candidates} and center_in_gt {self.center_in_gt}."
         )
 
     def compute_matches(
@@ -207,10 +207,10 @@ class ATSSMatcher(Matcher):
             num_anchors_per_loc: number of anchors per position
 
         Returns:
-            Tensor: matrix which contains the similarity from each boxes to each anchor [N, M]
-            Tensor: vector which contains the matched box index for all
-                anchors (if background `BELOW_LOW_THRESHOLD` is used
-                and if it should be ignored `BETWEEN_THRESHOLDS` is used) [M]
+            - matrix which contains the similarity from each boxes to each anchor [N, M]
+            - vector which contains the matched box index for all
+              anchors (if background `BELOW_LOW_THRESHOLD` is used
+              and if it should be ignored `BETWEEN_THRESHOLDS` is used) [M]
 
         Note:
             ``StandardMode`` = :class:`~monai.data.box_utils.CornerCornerModeTypeA`,
@@ -281,7 +281,6 @@ class ATSSMatcher(Matcher):
 
         matched_vals, matches = ious_inf.to(COMPUTE_DTYPE).max(dim=0)
         matches[matched_vals == -INF] = self.BELOW_LOW_THRESHOLD
-        # print(f"Num matches {(matches >= 0).sum()}, Adapt IoU {iou_thresh_per_gt}")
         return match_quality_matrix, matches
 
 

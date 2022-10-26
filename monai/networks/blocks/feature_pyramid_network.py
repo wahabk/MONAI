@@ -43,7 +43,6 @@
 # CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 """
 This script is modified from from torchvision to support N-D images,
 by overriding the definition of convolutional layers and pooling layers.
@@ -91,11 +90,12 @@ class LastLevelMaxPool(ExtraFPNBlock):
     in :class:`~monai.networks.blocks.feature_pyramid_network.FeaturePyramidNetwork` .
     """
 
-    def forward(self, results: List[Tensor], x: List[Tensor], names: List[str]) -> Tuple[List[Tensor], List[str]]:
-        spatial_dims = len(results[0].shape) - 2
+    def __init__(self, spatial_dims: int):
+        super().__init__()
         pool_type: Type[Union[nn.MaxPool1d, nn.MaxPool2d, nn.MaxPool3d]] = Pool[Pool.MAX, spatial_dims]
         self.maxpool = pool_type(kernel_size=1, stride=2, padding=0)
 
+    def forward(self, results: List[Tensor], x: List[Tensor], names: List[str]) -> Tuple[List[Tensor], List[str]]:
         names.append("pool")
         results.append(self.maxpool(results[-1]))
         return results, names
@@ -192,11 +192,12 @@ class FeaturePyramidNetwork(nn.Module):
         conv_type_: Type[nn.Module] = Conv[Conv.CONV, spatial_dims]
         for m in self.modules():
             if isinstance(m, conv_type_):
-                nn.init.kaiming_uniform_(m.weight, a=1)
+                nn.init.kaiming_uniform_(m.weight, a=1)  # type: ignore
                 nn.init.constant_(m.bias, 0.0)  # type: ignore
 
         if extra_blocks is not None:
-            assert isinstance(extra_blocks, ExtraFPNBlock)
+            if not isinstance(extra_blocks, ExtraFPNBlock):
+                raise AssertionError
         self.extra_blocks = extra_blocks
 
     def get_result_from_inner_blocks(self, x: Tensor, idx: int) -> Tensor:
@@ -239,7 +240,7 @@ class FeaturePyramidNetwork(nn.Module):
         """
         # unpack OrderedDict into two lists for easier handling
         names = list(x.keys())
-        x_values: List = list(x.values())
+        x_values: List[Tensor] = list(x.values())
 
         last_inner = self.get_result_from_inner_blocks(x_values[-1], -1)
         results = []
@@ -256,6 +257,6 @@ class FeaturePyramidNetwork(nn.Module):
             results, names = self.extra_blocks(results, x_values, names)
 
         # make it back an OrderedDict
-        out = OrderedDict([(k, v) for k, v in zip(names, results)])
+        out = OrderedDict(list(zip(names, results)))
 
         return out

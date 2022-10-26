@@ -8,7 +8,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
 This utility module mainly supports rectangular bounding boxes with a few
 different parameterizations and methods for converting between them. It
@@ -35,7 +34,6 @@ from monai.utils.type_conversion import convert_data_type, convert_to_dst_type
 
 # We support 2-D or 3-D bounding boxes
 SUPPORTED_SPATIAL_DIMS = [2, 3]
-
 
 # TO_REMOVE = 0.0 if the bottom-right corner pixel/voxel is not included in the boxes,
 #      i.e., when xmin=1., xmax=2., we have w = 1.
@@ -110,7 +108,8 @@ class BoxMode(ABC):
             .. code-block:: python
 
                 boxes = torch.ones(10,6)
-                boxmode.boxes_to_corners(boxes) will return a 6-element tuple, each element is a 10x1 tensor
+                boxmode = BoxMode()
+                boxmode.boxes_to_corners(boxes) # will return a 6-element tuple, each element is a 10x1 tensor
         """
         raise NotImplementedError(f"Subclass {self.__class__.__name__} must implement this method.")
 
@@ -130,7 +129,8 @@ class BoxMode(ABC):
             .. code-block:: python
 
                 corners = (torch.ones(10,1), torch.ones(10,1), torch.ones(10,1), torch.ones(10,1))
-                boxmode.corners_to_boxes(corners) will return a 10x4 tensor
+                boxmode = BoxMode()
+                boxmode.corners_to_boxes(corners) # will return a 10x4 tensor
         """
         raise NotImplementedError(f"Subclass {self.__class__.__name__} must implement this method.")
 
@@ -516,9 +516,9 @@ def convert_box_mode(
             boxes = torch.ones(10,4)
             # The following three lines are equivalent
             # They convert boxes with format [xmin, ymin, xmax, ymax] to [xcenter, ycenter, xsize, ysize].
-            box_convert_mode(boxes=boxes, src_mode="xyxy", dst_mode="ccwh")
-            box_convert_mode(boxes=boxes, src_mode="xyxy", dst_mode=monai.data.box_utils.CenterSizeMode)
-            box_convert_mode(boxes=boxes, src_mode="xyxy", dst_mode=monai.data.box_utils.CenterSizeMode())
+            convert_box_mode(boxes=boxes, src_mode="xyxy", dst_mode="ccwh")
+            convert_box_mode(boxes=boxes, src_mode="xyxy", dst_mode=monai.data.box_utils.CenterSizeMode)
+            convert_box_mode(boxes=boxes, src_mode="xyxy", dst_mode=monai.data.box_utils.CenterSizeMode())
     """
     src_boxmode = get_boxmode(src_mode)
     dst_boxmode = get_boxmode(dst_mode)
@@ -570,8 +570,8 @@ def convert_box_to_standard_mode(
             boxes = torch.ones(10,6)
             # The following two lines are equivalent
             # They convert boxes with format [xmin, xmax, ymin, ymax, zmin, zmax] to [xmin, ymin, zmin, xmax, ymax, zmax]
-            box_convert_standard_mode(boxes=boxes, mode="xxyyzz")
-            box_convert_mode(boxes=boxes, src_mode="xxyyzz", dst_mode="xyzxyz")
+            convert_box_to_standard_mode(boxes=boxes, mode="xxyyzz")
+            convert_box_mode(boxes=boxes, src_mode="xxyyzz", dst_mode="xyzxyz")
     """
     return convert_box_mode(boxes=boxes, src_mode=mode, dst_mode=StandardMode())
 
@@ -619,7 +619,7 @@ def centers_in_boxes(centers: NdarrayOrTensor, boxes: NdarrayOrTensor, eps: floa
         min_center_to_border: np.ndarray = np.stack(center_to_border, axis=1).min(axis=1)
         return min_center_to_border > eps  # array[bool]
 
-    return torch.stack(center_to_border, dim=1).to(COMPUTE_DTYPE).min(dim=1)[0] > eps  # Tensor[bool]
+    return torch.stack(center_to_border, dim=1).to(COMPUTE_DTYPE).min(dim=1)[0] > eps  # type: ignore
 
 
 def boxes_center_distance(
@@ -655,7 +655,7 @@ def boxes_center_distance(
     center2 = box_centers(boxes2_t.to(COMPUTE_DTYPE))  # (M, spatial_dims)
 
     if euclidean:
-        dists = (center1[:, None] - center2[None]).pow(2).sum(-1).sqrt()
+        dists = (center1[:, None] - center2[None]).pow(2).sum(-1).sqrt()  # type: ignore
     else:
         # before sum: (N, M, spatial_dims)
         dists = (center1[:, None] - center2[None]).sum(-1)
@@ -957,25 +957,25 @@ def spatial_crop_boxes(
         - ``keep``, it indicates whether each box in ``boxes`` are kept when ``remove_empty=True``.
     """
 
-    roi_start_torch, *_ = convert_data_type(
-        data=roi_start, output_type=torch.Tensor, dtype=torch.int16, wrap_sequence=True
-    )
-    roi_end_torch, *_ = convert_to_dst_type(src=roi_end, dst=roi_start_torch, wrap_sequence=True)
-    roi_end_torch = torch.maximum(roi_end_torch, roi_start_torch)
-
     # convert numpy to tensor if needed
-    boxes_t, *_ = convert_data_type(deepcopy(boxes), torch.Tensor)
+    boxes_t = convert_data_type(boxes, torch.Tensor)[0].clone()
 
     # convert to float32 since torch.clamp_ does not support float16
     boxes_t = boxes_t.to(dtype=COMPUTE_DTYPE)
 
+    roi_start_t = convert_to_dst_type(src=roi_start, dst=boxes_t, wrap_sequence=True)[0].to(torch.int16)
+    roi_end_t = convert_to_dst_type(src=roi_end, dst=boxes_t, wrap_sequence=True)[0].to(torch.int16)
+    roi_end_t = torch.maximum(roi_end_t, roi_start_t)
+
     # makes sure the bounding boxes are within the patch
     spatial_dims = get_spatial_dims(boxes=boxes, spatial_size=roi_end)
     for axis in range(0, spatial_dims):
-        boxes_t[:, axis].clamp_(min=roi_start_torch[axis], max=roi_end_torch[axis] - TO_REMOVE)
-        boxes_t[:, axis + spatial_dims].clamp_(min=roi_start_torch[axis], max=roi_end_torch[axis] - TO_REMOVE)
-        boxes_t[:, axis] -= roi_start_torch[axis]
-        boxes_t[:, axis + spatial_dims] -= roi_start_torch[axis]
+        boxes_t[:, axis] = boxes_t[:, axis].clamp(min=roi_start_t[axis], max=roi_end_t[axis] - TO_REMOVE)
+        boxes_t[:, axis + spatial_dims] = boxes_t[:, axis + spatial_dims].clamp(
+            min=roi_start_t[axis], max=roi_end_t[axis] - TO_REMOVE
+        )
+        boxes_t[:, axis] -= roi_start_t[axis]
+        boxes_t[:, axis + spatial_dims] -= roi_start_t[axis]
 
     # remove the boxes that are actually empty
     if remove_empty:
@@ -983,6 +983,8 @@ def spatial_crop_boxes(
         for axis in range(1, spatial_dims):
             keep_t = keep_t & (boxes_t[:, axis + spatial_dims] >= boxes_t[:, axis] + 1 - TO_REMOVE)
         boxes_t = boxes_t[keep_t]
+    else:
+        keep_t = torch.full_like(boxes_t[:, 0], fill_value=True, dtype=torch.bool)
 
     # convert tensor back to numpy if needed
     boxes_keep, *_ = convert_to_dst_type(src=boxes_t, dst=boxes)
@@ -1023,8 +1025,7 @@ def non_max_suppression(
     Args:
         boxes: bounding boxes, Nx4 or Nx6 torch tensor or ndarray. The box mode is assumed to be ``StandardMode``
         scores: prediction scores of the boxes, sized (N,). This function keeps boxes with higher scores.
-        nms_thresh: threshold of NMS. For boxes with overlap more than nms_thresh,
-            we only keep the one with the highest score.
+        nms_thresh: threshold of NMS. Discards all overlapping boxes with box_overlap > nms_thresh.
         max_proposals: maximum number of boxes it keeps.
             If ``max_proposals`` = -1, there is no limit on the number of boxes that are kept.
         box_overlap_metric: the metric to compute overlap between boxes.
@@ -1033,8 +1034,12 @@ def non_max_suppression(
         Indexes of ``boxes`` that are kept after NMS.
 
     Example:
-        keep = non_max_suppression(boxes, scores, num_thresh=0.1)
-        boxes_after_nms = boxes[keep]
+        .. code-block:: python
+
+            boxes = torch.ones(10,6)
+            scores = torch.ones(10)
+            keep = non_max_suppression(boxes, scores, num_thresh=0.1)
+            boxes_after_nms = boxes[keep]
     """
 
     # returns empty array if boxes is empty
@@ -1046,7 +1051,7 @@ def non_max_suppression(
             f"boxes and scores should have same length, got boxes shape {boxes.shape}, scores shape {scores.shape}"
         )
 
-    # convert tensor to numpy if needed
+    # convert numpy to tensor if needed
     boxes_t, *_ = convert_data_type(boxes, torch.Tensor)
     scores_t, *_ = convert_to_dst_type(scores, boxes_t)
 
@@ -1056,7 +1061,7 @@ def non_max_suppression(
 
     # initialize the list of picked indexes
     pick = []
-    idxs = torch.Tensor(list(range(0, boxes_sort.shape[0]))).to(torch.long)
+    idxs = torch.Tensor(list(range(0, boxes_sort.shape[0]))).to(device=boxes_t.device, dtype=torch.long)
 
     # keep looping while some indexes still remain in the indexes list
     while len(idxs) > 0:
@@ -1077,5 +1082,53 @@ def non_max_suppression(
     # return only the bounding boxes that were picked using the integer data type
     pick_idx = sort_idxs[pick]
 
-    # convert numpy back to tensor if needed
+    # convert tensor back to numpy if needed
     return convert_to_dst_type(src=pick_idx, dst=boxes, dtype=pick_idx.dtype)[0]
+
+
+def batched_nms(
+    boxes: NdarrayOrTensor,
+    scores: NdarrayOrTensor,
+    labels: NdarrayOrTensor,
+    nms_thresh: float,
+    max_proposals: int = -1,
+    box_overlap_metric: Callable = box_iou,
+) -> NdarrayOrTensor:
+    """
+    Performs non-maximum suppression in a batched fashion.
+    Each labels value correspond to a category, and NMS will not be applied between elements of different categories.
+
+    Adapted from https://github.com/MIC-DKFZ/nnDetection/blob/main/nndet/core/boxes/nms.py
+
+    Args:
+        boxes: bounding boxes, Nx4 or Nx6 torch tensor or ndarray. The box mode is assumed to be ``StandardMode``
+        scores: prediction scores of the boxes, sized (N,). This function keeps boxes with higher scores.
+        labels: indices of the categories for each one of the boxes. sized(N,), value range is (0, num_classes)
+        nms_thresh: threshold of NMS. Discards all overlapping boxes with box_overlap > nms_thresh.
+        max_proposals: maximum number of boxes it keeps.
+            If ``max_proposals`` = -1, there is no limit on the number of boxes that are kept.
+        box_overlap_metric: the metric to compute overlap between boxes.
+
+    Returns:
+        Indexes of ``boxes`` that are kept after NMS.
+    """
+    # returns empty array if boxes is empty
+    if boxes.shape[0] == 0:
+        return convert_to_dst_type(src=np.array([]), dst=boxes, dtype=torch.long)[0]
+
+    # convert numpy to tensor if needed
+    boxes_t, *_ = convert_data_type(boxes, torch.Tensor, dtype=torch.float32)
+    scores_t, *_ = convert_to_dst_type(scores, boxes_t)
+    labels_t, *_ = convert_to_dst_type(labels, boxes_t, dtype=torch.long)
+
+    # strategy: in order to perform NMS independently per class.
+    # we add an offset to all the boxes. The offset is dependent
+    # only on the class idx, and is large enough so that boxes
+    # from different classes do not overlap
+    max_coordinate = boxes_t.max()
+    offsets = labels_t.to(boxes_t) * (max_coordinate + 1)
+    boxes_for_nms = boxes + offsets[:, None]
+    keep = non_max_suppression(boxes_for_nms, scores_t, nms_thresh, max_proposals, box_overlap_metric)
+
+    # convert tensor back to numpy if needed
+    return convert_to_dst_type(src=keep, dst=boxes, dtype=keep.dtype)[0]
