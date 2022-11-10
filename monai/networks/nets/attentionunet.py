@@ -155,13 +155,28 @@ class AttentionBlock(nn.Module):
 
 
 class AttentionLayer(nn.Module):
-    def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, submodule: nn.Module, dropout=0.0, padding='same', level=0):
+    def __init__(
+        self,
+        spatial_dims: int,
+        in_channels: int,
+        out_channels: int,
+        submodule: nn.Module,
+        up_kernel_size=3,
+        strides=2,
+        dropout=0.0,
+    ):
         super().__init__()
 
         self.attention = AttentionBlock(
             spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2,
         )
-        self.upconv = UpConv(spatial_dims=spatial_dims, in_channels=out_channels, out_channels=in_channels, strides=2)
+        self.upconv = UpConv(
+            spatial_dims=spatial_dims,
+            in_channels=out_channels,
+            out_channels=in_channels,
+            strides=strides,
+            kernel_size=up_kernel_size,
+        )
         self.merge = Convolution(
             spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout,
         )
@@ -187,7 +202,7 @@ class AttentionUnet(nn.Module):
         channels (Sequence[int]): sequence of channels. Top block first. The length of `channels` should be no less than 2.
         strides (Sequence[int]): stride to use for convolutions.
         kernel_size: convolution kernel size.
-        upsample_kernel_size: convolution kernel size for transposed convolution layers.
+        up_kernel_size: convolution kernel size for transposed convolution layers.
         dropout: dropout ratio. Defaults to no dropout.
         padding: 'same', or 'valid'. whether to pad encoding layers for making the output same size or smaller than input.
     """
@@ -232,10 +247,9 @@ class AttentionUnet(nn.Module):
             conv_only=True,
         )
 
-        def _create_block(channels: Sequence[int], strides: Sequence[int], level: int = 0) -> nn.Module:
+        def _create_block(channels: Sequence[int], strides: Sequence[int]) -> nn.Module:
             if len(channels) > 2:
-                subblock = _create_block(channels[1:], strides[1:], level=level + 1)
-                
+                subblock = _create_block(channels[1:], strides[1:])
                 return AttentionLayer(
                     spatial_dims=spatial_dims,
                     in_channels=channels[0],
@@ -251,19 +265,21 @@ class AttentionUnet(nn.Module):
                         ),
                         subblock,
                     ),
+                    up_kernel_size=self.up_kernel_size,
+                    strides=strides[0],
                     dropout=dropout,
                     padding=self.padding,
                     level=level
                 )
             else:
                 # the next layer is the bottom so stop recursion,
-                # create the bottom layer as the sublock for this layer
-                return self._get_bottom_layer(channels[0], channels[1], strides[0], level=level + 1)
+                # create the bottom layer as the subblock for this layer
+                return self._get_bottom_layer(channels[0], channels[1], strides[0])
 
         encdec = _create_block(self.channels, self.strides)
         self.model = nn.Sequential(head, encdec, reduce_channels)
 
-    def _get_bottom_layer(self, in_channels: int, out_channels: int, strides: int, level: int) -> nn.Module:
+    def _get_bottom_layer(self, in_channels: int, out_channels: int, strides: int) -> nn.Module:
         return AttentionLayer(
             spatial_dims=self.dimensions,
             in_channels=in_channels,
@@ -276,6 +292,8 @@ class AttentionUnet(nn.Module):
                 dropout=self.dropout,
                 pad=None,
             ),
+            up_kernel_size=self.up_kernel_size,
+            strides=strides,
             dropout=self.dropout,
         )
 

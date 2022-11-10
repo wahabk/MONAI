@@ -37,8 +37,10 @@ def run_testsuit():
         "test_cachedataset_persistent_workers",
         "test_cachentransdataset",
         "test_check_missing_files",
+        "test_compute_f_beta",
         "test_compute_ho_ver_maps",
         "test_compute_ho_ver_maps_d",
+        "test_compute_panoptic_quality",
         "test_contrastive_loss",
         "test_csv_dataset",
         "test_csv_iterable_dataset",
@@ -75,6 +77,7 @@ def run_testsuit():
         "test_handler_hausdorff_distance",
         "test_handler_lr_scheduler",
         "test_handler_mean_dice",
+        "test_handler_panoptic_quality",
         "test_handler_mean_iou",
         "test_handler_metrics_saver",
         "test_handler_metrics_saver_dist",
@@ -140,6 +143,7 @@ def run_testsuit():
         "test_png_saver",
         "test_prepare_batch_default",
         "test_prepare_batch_extra_input",
+        "test_prepare_batch_hovernet",
         "test_rand_grid_patch",
         "test_rand_rotate",
         "test_rand_rotated",
@@ -209,7 +213,7 @@ if __name__ == "__main__":
     from monai.utils.module import load_submodules
 
     _, err_mod = load_submodules(sys.modules["monai"], True)
-    assert not err_mod
+    assert not err_mod, f"err_mod={err_mod} not empty"
 
     # testing all modules
     test_runner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
