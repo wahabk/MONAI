@@ -31,6 +31,7 @@ class ConvBlock(nn.Module):
         kernel_size: int = 3,
         strides: int = 1,
         dropout=0.0,
+        pad=None,
     ):
         super().__init__()
         layers = [
@@ -40,7 +41,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=strides,
-                padding=None,
+                padding=pad,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
@@ -52,7 +53,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=1,
-                padding=None,
+                padding=pad,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
