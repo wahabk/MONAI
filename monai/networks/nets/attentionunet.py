@@ -1,3 +1,5 @@
+
+
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +31,6 @@ class ConvBlock(nn.Module):
         kernel_size: int = 3,
         strides: int = 1,
         dropout=0.0,
-        pad=None,
     ):
         super().__init__()
         layers = [
@@ -39,7 +40,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=strides,
-                padding=pad,
+                padding=None,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
@@ -51,7 +52,7 @@ class ConvBlock(nn.Module):
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 strides=1,
-                padding=pad,
+                padding=None,
                 adn_ordering="NDA",
                 act="relu",
                 norm=Norm.BATCH,
@@ -66,15 +67,7 @@ class ConvBlock(nn.Module):
 
 
 class UpConv(nn.Module):
-    def __init__(
-        self, 
-        spatial_dims: int, 
-        in_channels: int, 
-        out_channels: int, 
-        kernel_size=3, 
-        strides=2, 
-        dropout=0.0,
-        pad=None):
+    def __init__(self, spatial_dims: int, in_channels: int, out_channels: int, kernel_size=3, strides=2, dropout=0.0):
         super().__init__()
         self.up = Convolution(
             spatial_dims,
@@ -87,7 +80,6 @@ class UpConv(nn.Module):
             norm=Norm.BATCH,
             dropout=dropout,
             is_transposed=True,
-            # padding=pad,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -98,8 +90,6 @@ class UpConv(nn.Module):
 class AttentionBlock(nn.Module):
     def __init__(self, spatial_dims: int, f_int: int, f_g: int, f_l: int, dropout=0.0):
         super().__init__()
-
-
         self.W_g = nn.Sequential(
             Convolution(
                 spatial_dims=spatial_dims,
@@ -166,9 +156,8 @@ class AttentionLayer(nn.Module):
         dropout=0.0,
     ):
         super().__init__()
-
         self.attention = AttentionBlock(
-            spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2,
+            spatial_dims=spatial_dims, f_g=in_channels, f_l=in_channels, f_int=in_channels // 2
         )
         self.upconv = UpConv(
             spatial_dims=spatial_dims,
@@ -178,7 +167,7 @@ class AttentionLayer(nn.Module):
             kernel_size=up_kernel_size,
         )
         self.merge = Convolution(
-            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout,
+            spatial_dims=spatial_dims, in_channels=2 * in_channels, out_channels=in_channels, dropout=dropout
         )
         self.submodule = submodule
 
@@ -194,7 +183,6 @@ class AttentionUnet(nn.Module):
     Attention Unet based on
     Otkay et al. "Attention U-Net: Learning Where to Look for the Pancreas"
     https://arxiv.org/abs/1804.03999
-
     Args:
         spatial_dims: number of spatial dimensions of the input image.
         in_channels: number of the input channel.
@@ -234,7 +222,6 @@ class AttentionUnet(nn.Module):
             self.pad = 0
         else:
             raise Exception("Only options available for padding is 'same' or 'valid'")
-        self.up_kernel_size = up_kernel_size
 
         head = ConvBlock(spatial_dims=spatial_dims, in_channels=in_channels, out_channels=channels[0], dropout=dropout, pad=self.pad)
         reduce_channels = Convolution(
@@ -246,6 +233,7 @@ class AttentionUnet(nn.Module):
             padding=0,
             conv_only=True,
         )
+        self.up_kernel_size = up_kernel_size
 
         def _create_block(channels: Sequence[int], strides: Sequence[int]) -> nn.Module:
             if len(channels) > 2:
@@ -261,15 +249,12 @@ class AttentionUnet(nn.Module):
                             out_channels=channels[1],
                             strides=strides[0],
                             dropout=self.dropout,
-                            pad=None,
                         ),
                         subblock,
                     ),
                     up_kernel_size=self.up_kernel_size,
                     strides=strides[0],
                     dropout=dropout,
-                    padding=self.padding,
-                    level=level
                 )
             else:
                 # the next layer is the bottom so stop recursion,
@@ -290,7 +275,6 @@ class AttentionUnet(nn.Module):
                 out_channels=out_channels,
                 strides=strides,
                 dropout=self.dropout,
-                pad=None,
             ),
             up_kernel_size=self.up_kernel_size,
             strides=strides,
